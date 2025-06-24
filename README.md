@@ -1,4 +1,4 @@
-Netflix Genre-Based Movie Recommender 🎬
+Netflix Genre-Based Movie Recommender
 
 This is a Python-based movie recommendation script that:
 - Asks you for a genre (e.g., "drama", "comedy")
