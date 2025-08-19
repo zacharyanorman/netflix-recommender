@@ -1,8 +1,7 @@
 # import the requests module and API values from secrets.py
 import requests
 from genres import genres_list
-from secrets import netflix_api_key
-from secrets import omdb_api_key
+from my_secrets import netflix_api_key, omdb_api_key
 
 # asks user for genre and makes lower case and strips
 genre = input("What genre would you like to watch tonight? ").lower().strip()
