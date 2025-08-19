@@ -88,28 +88,36 @@ if user_input:
                     }
             return None
 
-        rated_titles = [r for t in all_titles if (r := get_rating(t))]
+        # Get ratings with deduplication
+        seen_titles = set()
+        rated_titles = []
+        for t in all_titles:
+            if t.lower() not in seen_titles:
+                r = get_rating(t)
+                if r:
+                    rated_titles.append(r)
+                    seen_titles.add(t.lower())
 
-        # Sort and filter top 5 for movies and TV
+        # Sort and filter top 10 for movies and TV
         movies = sorted(
             [r for r in rated_titles if r["type"] == "movie"],
             key=lambda x: x["rating"],
             reverse=True
-        )[:5]
+        )[:10]
 
         tv_shows = sorted(
             [r for r in rated_titles if r["type"] in ["tvSeries", "tvMiniSeries"]],
             key=lambda x: x["rating"],
             reverse=True
-        )[:5]
+        )[:10]
 
         if movies:
-            st.subheader("🎬 Top 5 Movies")
+            st.subheader("🎬 Top 10 Movies")
             for m in movies:
                 st.write(f"**{m['title']}** — IMDb: {m['rating']}")
 
         if tv_shows:
-            st.subheader("📺 Top 5 TV Shows")
+            st.subheader("📺 Top 10 TV Shows")
             for s in tv_shows:
                 st.write(f"**{s['title']}** — IMDb: {s['rating']}")
 
