@@ -3,28 +3,33 @@ import requests
 import pandas as pd
 import streamlit as st
 import gdown
+from difflib import get_close_matches
 
 from genres import genres_list
 
-# Load Netflix API key
+# Load Netflix API key from secrets
 netflix_api_key = st.secrets["netflix_api_key"]
 
 # Page title
 st.title("🎬 Netflix Recommender")
 st.write("Get top-rated movies and TV shows from Netflix by entering your favorite genre.")
 
-# Download IMDb files if not present
+# Download IMDb files from Google Drive if not present
 if not os.path.exists("title.basics.tsv"):
     gdown.download(id="18P42Sr33qRbiE91_n2J4f6nJrsWSF-mU", output="title.basics.tsv", quiet=False)
 
 if not os.path.exists("title.ratings.tsv"):
     gdown.download(id="10Orbx6H-wQWIQ7w9t7H9s-mnAzQpEpY1", output="title.ratings.tsv", quiet=False)
 
-# Genre input
+# Load IMDb datasets
+basics = pd.read_csv("title.basics.tsv", sep="\t", na_values="\\N", low_memory=False)
+ratings = pd.read_csv("title.ratings.tsv", sep="\t", na_values="\\N")
+
+# Genre input box
 user_input = st.text_input("What genre would you like to watch tonight?").lower().strip()
 
 if user_input:
-    # Try matching genre
+    # Match input to genres
     try:
         from sentence_transformers import SentenceTransformer
         from sklearn.metrics.pairwise import cosine_similarity
@@ -39,6 +44,7 @@ if user_input:
         top_matches = [genre_names[i] for i in top_indices]
 
         st.markdown(f"**Top matching genres:** {', '.join(top_matches)}")
+
     except ImportError:
         matching_genres = [k for k, v in genres_list.items() if user_input in v.lower()]
         st.markdown(f"**Matched genres:** {', '.join(matching_genres)}")
@@ -66,53 +72,39 @@ if user_input:
                     genre_titles = [item['title'] for item in data['results']]
                     all_titles.extend(genre_titles)
 
-        all_titles_set = set(title.lower() for title in all_titles)
+        # Fuzzy matching IMDb titles
+        imdb_titles = basics['primaryTitle'].dropna().str.lower().unique()
 
-        # Stream matching IMDb basics rows
-        imdb_data = {}
-        with open("title.basics.tsv", encoding="utf-8") as f:
-            next(f)  # skip header
-            for line in f:
-                fields = line.strip().split("\t")
-                if len(fields) < 3:
-                    continue
-                tconst, titleType, primaryTitle = fields[0], fields[1], fields[2]
-                if primaryTitle.lower() in all_titles_set:
-                    imdb_data[primaryTitle.lower()] = {"tconst": tconst, "type": titleType}
+        def get_rating(title):
+            close = get_close_matches(title.lower(), imdb_titles, n=1, cutoff=0.8)
+            if close:
+                match = basics[basics['primaryTitle'].str.lower() == close[0]]
+                merged = match.merge(ratings, on='tconst', how='left')
+                merged = merged.dropna(subset=['averageRating'])
+                if not merged.empty:
+                    return {
+                        "title": match['primaryTitle'].iloc[0],
+                        "rating": merged['averageRating'].iloc[0],
+                        "type": merged['titleType'].iloc[0]
+                    }
+            return None
 
-        # Stream matching ratings
-        for_ratings = set([v["tconst"] for v in imdb_data.values()])
-        tconst_to_rating = {}
-        with open("title.ratings.tsv", encoding="utf-8") as f:
-            next(f)  # skip header
-            for line in f:
-                fields = line.strip().split("\t")
-                if len(fields) < 2:
-                    continue
-                tconst, rating = fields[0], fields[1]
-                if tconst in for_ratings:
-                    tconst_to_rating[tconst] = float(rating)
-
-        # Match ratings back to titles
         rated_titles = []
-        for title_lower, info in imdb_data.items():
-            rating = tconst_to_rating.get(info["tconst"])
-            if rating:
-                rated_titles.append({
-                    "title": title_lower.title(),
-                    "rating": rating,
-                    "type": info["type"]
-                })
+        for t in all_titles:
+            r = get_rating(t)
+            if r:
+                rated_titles.append(r)
 
-        # Sort and display
         movies = sorted(
             [r for r in rated_titles if r["type"] == "movie"],
-            key=lambda x: x["rating"], reverse=True
+            key=lambda x: x["rating"],
+            reverse=True
         )[:5]
 
-        shows = sorted(
+        tv_shows = sorted(
             [r for r in rated_titles if r["type"] in ["tvSeries", "tvMiniSeries"]],
-            key=lambda x: x["rating"], reverse=True
+            key=lambda x: x["rating"],
+            reverse=True
         )[:5]
 
         if movies:
@@ -120,10 +112,10 @@ if user_input:
             for m in movies:
                 st.write(f"**{m['title']}** — IMDb: {m['rating']}")
 
-        if shows:
+        if tv_shows:
             st.subheader("📺 Top 5 TV Shows")
-            for s in shows:
+            for s in tv_shows:
                 st.write(f"**{s['title']}** — IMDb: {s['rating']}")
 
-        if not movies and not shows:
-            st.info("No rated matches found for this genre.")
+        if not movies and not tv_shows:
+            st.info("No rated results found for the matched titles.")
