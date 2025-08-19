@@ -8,29 +8,24 @@ from genres import genres_list
 # Load Netflix API key from Streamlit secrets
 netflix_api_key = st.secrets["netflix_api_key"]
 
-# Streamlit UI
+# Page title
 st.title("🎬 Netflix Recommender")
-st.write("Get top-rated movies and TV shows on Netflix based on your favorite genre.")
+st.write("Get top-rated movies and TV shows from Netflix by entering your favorite genre.")
 
-# Load pre-trimmed IMDb basics file from local directory
-try:
+# Load reduced IMDb datasets
+@st.cache_data
+def load_datasets():
     basics = pd.read_csv("title.basics_reduced.tsv", sep="\t", na_values="\\N")
-except FileNotFoundError:
-    st.error("❌ IMDb file 'title.basics_reduced.tsv' not found.")
-    st.stop()
-
-# Load ratings (still small)
-try:
     ratings = pd.read_csv("title.ratings.tsv", sep="\t", na_values="\\N")
-except FileNotFoundError:
-    st.error("❌ IMDb file 'title.ratings.tsv' not found.")
-    st.stop()
+    return basics, ratings
 
-# User input for genre
+basics, ratings = load_datasets()
+
+# Genre input box
 user_input = st.text_input("What genre would you like to watch tonight?").lower().strip()
 
 if user_input:
-    # Try fuzzy genre matching using sentence-transformers
+    # Match input to genres
     try:
         from sentence_transformers import SentenceTransformer
         from sklearn.metrics.pairwise import cosine_similarity
@@ -43,11 +38,9 @@ if user_input:
         top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:3]
         matching_genres = [list(genres_list.keys())[i] for i in top_indices]
         top_matches = [genre_names[i] for i in top_indices]
-
         st.markdown(f"**Top matching genres:** {', '.join(top_matches)}")
 
     except ImportError:
-        # Fallback: simple substring match
         matching_genres = [k for k, v in genres_list.items() if user_input in v.lower()]
         st.markdown(f"**Matched genres:** {', '.join(matching_genres)}")
 
@@ -65,7 +58,7 @@ if user_input:
                     },
                     params={
                         "genrelist": genre_id,
-                        "countrylist": "78",  # United States
+                        "countrylist": "78",  # US
                         "limit": "100"
                     }
                 )
@@ -74,7 +67,7 @@ if user_input:
                     genre_titles = [item['title'] for item in data['results']]
                     all_titles.extend(genre_titles)
 
-        # Match with IMDb ratings
+        # Match titles with IMDb ratings
         def get_rating(title):
             matches = basics[basics['primaryTitle'].str.lower() == title.lower()]
             if not matches.empty:
@@ -88,21 +81,29 @@ if user_input:
                     }
             return None
 
-        rated_titles = [r for t in all_titles if (r := get_rating(t))]
+        rated_titles = []
+        for t in all_titles:
+            r = get_rating(t)
+            if r:
+                rated_titles.append(r)
 
-        # Sort and filter top 5 for movies and TV
-        movies = sorted(
-            [r for r in rated_titles if r["type"] == "movie"],
-            key=lambda x: x["rating"],
-            reverse=True
-        )[:5]
+        # Deduplicate by title (keep highest-rated version)
+        def dedupe_by_title(entries):
+            seen = {}
+            for entry in entries:
+                title = entry["title"]
+                if title not in seen or entry["rating"] > seen[title]["rating"]:
+                    seen[title] = entry
+            return list(seen.values())
 
-        tv_shows = sorted(
-            [r for r in rated_titles if r["type"] in ["tvSeries", "tvMiniSeries"]],
-            key=lambda x: x["rating"],
-            reverse=True
-        )[:5]
+        # Apply deduplication and sort
+        movies = dedupe_by_title([r for r in rated_titles if r["type"] == "movie"])
+        movies = sorted(movies, key=lambda x: x["rating"], reverse=True)[:5]
 
+        tv_shows = dedupe_by_title([r for r in rated_titles if r["type"] in ["tvSeries", "tvMiniSeries"]])
+        tv_shows = sorted(tv_shows, key=lambda x: x["rating"], reverse=True)[:5]
+
+        # Display results
         if movies:
             st.subheader("🎬 Top 5 Movies")
             for m in movies:
@@ -114,4 +115,4 @@ if user_input:
                 st.write(f"**{s['title']}** — IMDb: {s['rating']}")
 
         if not movies and not tv_shows:
-            st.info("No rated results found.")
+            st.info("No rated results found for the matched titles.")
