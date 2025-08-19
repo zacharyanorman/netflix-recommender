@@ -1,1 +1,43 @@
 my_secrets.py
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+env/
+ENV/
+venv/
+pip-log.txt
+
+# Editor/IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IMDb files (huge TSVs)
+title.basics.tsv
+title.ratings.tsv
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Environment config
+.env
+*.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Build artifacts
+*.log
+*.egg-info/
+dist/
+build/
