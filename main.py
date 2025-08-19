@@ -4,7 +4,10 @@ import pandas as pd
 import gdown
 
 from genres import genres_list
-from my_secrets import netflix_api_key
+# from my_secrets import netflix_api_key
+import streamlit as st
+
+netflix_api_key = st.secrets["netflix_api_key"]
 
 # Download IMDb TSVs from Google Drive if not already present
 
