@@ -24,6 +24,12 @@ if not os.path.exists("title.ratings.tsv"):
 basics = pd.read_csv("title.basics.tsv", sep="\t", na_values="\\N", low_memory=False)
 ratings = pd.read_csv("title.ratings.tsv", sep="\t", na_values="\\N")
 
+# Preprocess IMDb title map once
+title_map = basics[['primaryTitle', 'tconst', 'titleType']].dropna()
+title_map['primaryTitle_lower'] = title_map['primaryTitle'].str.lower()
+title_map = title_map.drop_duplicates(subset=['primaryTitle_lower'])
+title_map = title_map.merge(ratings, on='tconst', how='left').dropna(subset=['averageRating'])
+
 # Genre input box
 user_input = st.text_input("What genre would you like to watch tonight?").lower().strip()
 
@@ -62,7 +68,7 @@ if user_input:
                     },
                     params={
                         "genrelist": genre_id,
-                        "countrylist": "78",  # US
+                        "countrylist": "78",
                         "limit": "100"
                     }
                 )
@@ -71,25 +77,19 @@ if user_input:
                     genre_titles = [item['title'] for item in data['results']]
                     all_titles.extend(genre_titles)
 
-        # Match with IMDb ratings
+        # Fast IMDb title lookup
         def get_rating(title):
-            matches = basics[basics['primaryTitle'].str.lower() == title.lower()]
-            if not matches.empty:
-                merged = matches.merge(ratings, on='tconst', how='left')
-                merged = merged.dropna(subset=['averageRating'])
-                if not merged.empty:
-                    return {
-                        "title": title,
-                        "rating": merged['averageRating'].iloc[0],
-                        "type": merged['titleType'].iloc[0]
-                    }
+            match = title_map[title_map['primaryTitle_lower'] == title.lower()]
+            if not match.empty:
+                row = match.iloc[0]
+                return {
+                    "title": row['primaryTitle'],
+                    "rating": row['averageRating'],
+                    "type": row['titleType']
+                }
             return None
 
-        rated_titles = []
-        for t in all_titles:
-            r = get_rating(t)
-            if r:
-                rated_titles.append(r)
+        rated_titles = [r for t in all_titles if (r := get_rating(t)) is not None]
 
         movies = sorted(
             [r for r in rated_titles if r["type"] == "movie"],
